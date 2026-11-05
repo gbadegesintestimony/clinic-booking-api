@@ -568,35 +568,39 @@
     await loadSlots();
   });
 
-  newIdemKeyBtn.addEventListener('click', () => {
-    idemKeyInput.value = generateIdempotencyKey();
-  });
+  if (newIdemKeyBtn) {
+    newIdemKeyBtn.addEventListener('click', () => {
+      idemKeyInput.value = generateIdempotencyKey();
+    });
+  }
 
   // Reset Demo Slots (POST /reset)
-  resetDemoBtn.addEventListener('click', async () => {
-    const demoSlots = [
-      { id: 's1', provider: 'Dr Ade', start: '2026-12-10T09:00:00Z', end: '2026-12-10T09:30:00Z' },
-      { id: 's2', provider: 'Dr Ade', start: '2026-12-10T09:30:00Z', end: '2026-12-10T10:00:00Z' },
-      { id: 's3', provider: 'Dr Bello', start: '2026-12-10T10:00:00Z', end: '2026-12-10T10:30:00Z' },
-      { id: 's4', provider: 'Dr Bello', start: '2026-12-10T11:00:00Z', end: '2026-12-10T11:30:00Z' },
-      { id: 's5', provider: 'Dr Chen', start: '2026-12-11T14:00:00Z', end: '2026-12-11T14:30:00Z' },
-      { id: 's6', provider: 'Dr Chen', start: '2026-12-11T15:00:00Z', end: '2026-12-11T15:30:00Z' }
-    ];
-    const res = await apiFetch('/reset', {
-      method: 'POST',
-      body: JSON.stringify({ slots: demoSlots })
+  if (resetDemoBtn) {
+    resetDemoBtn.addEventListener('click', async () => {
+      const demoSlots = [
+        { id: 's1', provider: 'Dr Ade', start: '2026-12-10T09:00:00Z', end: '2026-12-10T09:30:00Z' },
+        { id: 's2', provider: 'Dr Ade', start: '2026-12-10T09:30:00Z', end: '2026-12-10T10:00:00Z' },
+        { id: 's3', provider: 'Dr Bello', start: '2026-12-10T10:00:00Z', end: '2026-12-10T10:30:00Z' },
+        { id: 's4', provider: 'Dr Bello', start: '2026-12-10T11:00:00Z', end: '2026-12-10T11:30:00Z' },
+        { id: 's5', provider: 'Dr Chen', start: '2026-12-11T14:00:00Z', end: '2026-12-11T14:30:00Z' },
+        { id: 's6', provider: 'Dr Chen', start: '2026-12-11T15:00:00Z', end: '2026-12-11T15:30:00Z' }
+      ];
+      const res = await apiFetch('/reset', {
+        method: 'POST',
+        body: JSON.stringify({ slots: demoSlots })
+      });
+      if (res.ok) {
+        confirmationCard.hidden = true;
+        patientBookingsContainer.hidden = true;
+        selectedSlotId = 's1';
+        slotIdInput.value = 's1';
+        showFormAlert('Demo slots and bookings have been reset via POST /reset.', 'success');
+        await loadSlots();
+      } else {
+        showFormAlert(`Reset failed [${res.status}]: ${res.data?.error || 'Error'}`, 'error');
+      }
     });
-    if (res.ok) {
-      confirmationCard.hidden = true;
-      patientBookingsContainer.hidden = true;
-      selectedSlotId = 's1';
-      slotIdInput.value = 's1';
-      showFormAlert('Demo slots and bookings have been reset via POST /reset.', 'success');
-      await loadSlots();
-    } else {
-      showFormAlert(`Reset failed [${res.status}]: ${res.data?.error || 'Error'}`, 'error');
-    }
-  });
+  }
 
   // Initialize
   idemKeyInput.value = generateIdempotencyKey();

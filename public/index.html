@@ -139,42 +139,8 @@
               </div>
             </div>
 
-            <details class="advanced-details">
-              <summary>Idempotency &amp; API Key Settings (Levels 2 &amp; 4)</summary>
-              <div class="advanced-inner">
-                <div class="field">
-                  <label for="idempotency-key-input">Idempotency-Key Header (Optional)</label>
-                  <span id="idem-hint" class="hint">Prevents duplicate bookings if a request is retried.</span>
-                  <div class="input-with-btn">
-                    <input
-                      type="text"
-                      id="idempotency-key-input"
-                      name="idempotency_key"
-                      autocorrect="off"
-                      autocapitalize="off"
-                      spellcheck="false"
-                      aria-describedby="idem-hint"
-                    >
-                    <button type="button" id="new-idem-key-btn" class="btn btn-secondary">New Key</button>
-                  </div>
-                </div>
-
-                <div class="field">
-                  <label for="api-key-input">X-API-Key Header (Level 2)</label>
-                  <span id="apikey-hint" class="hint">Required on all API calls. Missing or wrong key returns 401.</span>
-                  <input
-                    type="text"
-                    id="api-key-input"
-                    name="api_key"
-                    value="koya-clinic-key-2026"
-                    autocorrect="off"
-                    autocapitalize="off"
-                    spellcheck="false"
-                    aria-describedby="apikey-hint"
-                  >
-                </div>
-              </div>
-            </details>
+            <input type="hidden" id="idempotency-key-input" name="idempotency_key">
+            <input type="hidden" id="api-key-input" name="api_key" value="koya-clinic-key-2026">
 
             <div id="booking-form-alert" class="alert-box" role="alert" aria-live="assertive" hidden></div>
 
@@ -189,10 +155,10 @@
       <section class="card lookup-section" aria-labelledby="lookup-heading">
         <h2 id="lookup-heading">3. Look Up &amp; Manage Bookings</h2>
 
-        <!-- Single Booking Lookup by ID (Level 1) -->
+        <!-- Single Booking Lookup by ID -->
         <form id="lookup-id-form" action="/bookings" method="GET" class="sub-form">
           <fieldset>
-            <legend>Find Booking by ID (Level 1)</legend>
+            <legend>Find Booking by ID</legend>
             <div class="field">
               <label for="lookup-id-input">Booking ID</label>
               <div class="input-with-btn">
@@ -213,10 +179,10 @@
 
         <hr class="divider">
 
-        <!-- Paginated Bookings by Email (Level 4) -->
+        <!-- Paginated Bookings by Email -->
         <form id="lookup-email-form" action="/bookings" method="GET" class="sub-form">
           <fieldset>
-            <legend>Patient Bookings with Cursor Pagination (Level 4)</legend>
+            <legend>My Bookings by Email</legend>
             <div class="field">
               <label for="lookup-email-input">Patient Email</label>
               <input
@@ -233,7 +199,7 @@
             </div>
             <div class="pagination-controls-row">
               <div class="field-inline">
-                <label for="lookup-limit-input">Page Size (1–50)</label>
+                <label for="lookup-limit-input">Results per page</label>
                 <select id="lookup-limit-input" name="limit">
                   <option value="2">2 per page</option>
                   <option value="5">5 per page</option>
@@ -256,15 +222,6 @@
           </div>
         </div>
       </section>
-
-      <!-- Admin Reset Utility (POST /reset) -->
-      <details class="card admin-card">
-        <summary>Admin Tools — Reset &amp; Seed Clinic Slots (POST /reset)</summary>
-        <div class="admin-inner">
-          <p class="section-desc">Deletes all bookings and replaces all slots with the default demo schedule.</p>
-          <button type="button" id="reset-demo-btn" class="btn btn-secondary">Reset to Demo Slots</button>
-        </div>
-      </details>
     </div>
   </main>
 
@@ -285,7 +242,7 @@
   </dialog>
 
   <footer class="site-footer container">
-    <p>Koya Clinic Booking API &amp; Web Portal · Implements OpenAPI Levels 1–5</p>
+    <p>Koya Clinic Appointment Portal</p>
   </footer>
 
   <script src="/app.js"></script>
