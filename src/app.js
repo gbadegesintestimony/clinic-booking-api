@@ -1,6 +1,8 @@
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { createStorage } = require('./db');
+const bundledStatic = require('./static');
 
 const DEFAULT_API_KEY = process.env.API_KEY || 'koya-clinic-key-2026';
 
@@ -18,16 +20,22 @@ function sendJson(res, statusCode, payload, extraHeaders = {}) {
   res.end(body);
 }
 
-function sendStaticFile(res, filePath, contentType, replacements = null) {
+function sendStaticFile(res, filePath, contentType, replacements = null, fallbackText = null) {
   try {
-    let content = fs.readFileSync(filePath);
+    let text;
+    if (fs.existsSync(filePath)) {
+      text = fs.readFileSync(filePath, 'utf8');
+    } else if (fallbackText !== null) {
+      text = fallbackText;
+    } else {
+      return sendJson(res, 404, { error: 'File not found' });
+    }
     if (replacements && typeof contentType === 'string' && contentType.includes('text/html')) {
-      let text = content.toString('utf8');
       for (const [k, v] of Object.entries(replacements)) {
         text = text.replaceAll(k, v);
       }
-      content = Buffer.from(text, 'utf8');
     }
+    const content = Buffer.from(text, 'utf8');
     res.writeHead(200, {
       'Content-Type': contentType,
       'Access-Control-Allow-Origin': '*',
@@ -122,23 +130,32 @@ function createApp(options = {}) {
           res,
           path.join(publicDir, 'index.html'),
           'text/html; charset=utf-8',
-          { 'koya-clinic-key-2026': apiKey }
+          { 'koya-clinic-key-2026': apiKey },
+          bundledStatic.html
         );
       }
       if (req.method === 'GET' && pathname === '/styles.css') {
-        return sendStaticFile(res, path.join(publicDir, 'styles.css'), 'text/css; charset=utf-8');
+        return sendStaticFile(
+          res,
+          path.join(publicDir, 'styles.css'),
+          'text/css; charset=utf-8',
+          null,
+          bundledStatic.css
+        );
       }
       if (req.method === 'GET' && pathname === '/app.js') {
         return sendStaticFile(
           res,
           path.join(publicDir, 'app.js'),
-          'application/javascript; charset=utf-8'
+          'application/javascript; charset=utf-8',
+          null,
+          bundledStatic.js
         );
       }
       if (req.method === 'GET' && pathname === '/health') {
         return sendJson(res, 200, { status: 'ok' });
       }
-      if (req.method === 'GET' && pathname === '/favicon.ico') {
+      if (req.method === 'GET' && (pathname === '/favicon.ico' || pathname === '/favicon.png')) {
         res.writeHead(204);
         return res.end();
       }
@@ -281,8 +298,21 @@ function createApp(options = {}) {
   };
 }
 
-module.exports = {
-  createApp,
-  DEFAULT_API_KEY
-};
+if (!process.env.DATABASE_URL && !process.env.SQLITE_PATH && process.env.VERCEL) {
+  process.env.SQLITE_PATH = path.join(os.tmpdir(), 'clinic.sqlite');
+}
+
+let _defaultHandler = null;
+function defaultApp(req, res) {
+  if (!_defaultHandler) {
+    _defaultHandler = createApp();
+  }
+  return _defaultHandler(req, res);
+}
+
+defaultApp.createApp = createApp;
+defaultApp.DEFAULT_API_KEY = DEFAULT_API_KEY;
+defaultApp.default = defaultApp;
+
+module.exports = defaultApp;
 
