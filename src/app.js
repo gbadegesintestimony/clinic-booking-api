@@ -42,25 +42,21 @@ function sendStaticFile(res, filePath, contentType, replacements = null) {
 function readJsonBody(req) {
   return new Promise((resolve, reject) => {
     // Support pre-parsed body (e.g. serverless environments)
-    if (req.body !== undefined) {
-      if (typeof req.body === 'string') {
-        if (req.body.trim() === '') return resolve({});
-        try {
+    try {
+      if (req.body !== undefined) {
+        if (typeof req.body === 'string') {
+          if (req.body.trim() === '') return resolve({});
           return resolve(JSON.parse(req.body));
-        } catch (err) {
-          return reject(new Error('Invalid JSON'));
         }
-      }
-      if (Buffer.isBuffer(req.body)) {
-        try {
+        if (Buffer.isBuffer(req.body)) {
           return resolve(JSON.parse(req.body.toString('utf8')));
-        } catch (err) {
-          return reject(new Error('Invalid JSON'));
+        }
+        if (typeof req.body === 'object') {
+          return resolve(req.body);
         }
       }
-      if (typeof req.body === 'object') {
-        return resolve(req.body);
-      }
+    } catch (err) {
+      return reject(new Error('Invalid JSON'));
     }
 
     const chunks = [];
@@ -126,7 +122,7 @@ function createApp(options = {}) {
           res,
           path.join(publicDir, 'index.html'),
           'text/html; charset=utf-8',
-          { '__DEFAULT_API_KEY__': apiKey }
+          { 'koya-clinic-key-2026': apiKey }
         );
       }
       if (req.method === 'GET' && pathname === '/styles.css') {
@@ -289,3 +285,4 @@ module.exports = {
   createApp,
   DEFAULT_API_KEY
 };
+

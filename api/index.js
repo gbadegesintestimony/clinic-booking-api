@@ -10,3 +10,4 @@ if (!process.env.DATABASE_URL && !process.env.SQLITE_PATH) {
 const app = createApp();
 
 module.exports = (req, res) => app(req, res);
+

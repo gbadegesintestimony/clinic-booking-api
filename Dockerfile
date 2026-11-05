@@ -7,3 +7,4 @@ EXPOSE 3000
 ENV PORT=3000
 ENV API_KEY=koya-clinic-key-2026
 CMD ["node", "src/server.js"]
+
