@@ -4,8 +4,8 @@
   "description": "Koya Cohort 4 Assessment - Task 1: Clinic Booking API & Web App (Levels 1-5)",
   "main": "src/server.js",
   "scripts": {
-    "start": "node src/server.js",
-    "dev": "node --watch src/server.js",
+    "start": "node --env-file-if-exists=.env src/server.js",
+    "dev": "node --watch --env-file-if-exists=.env src/server.js",
     "test": "node --test tests/api.test.js"
   },
   "engines": {
@@ -15,3 +15,4 @@
     "pg": "^8.13.3"
   }
 }
+
