@@ -2,16 +2,19 @@ const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
 const { createApp } = require('../src/app');
-const { SqliteStorage } = require('../src/db');
+const { createStorage, SqliteStorage, DEFAULT_SLOTS } = require('../src/db');
 
 const TEST_API_KEY = 'test-secret-api-key';
 
 describe('Clinic Booking API (Levels 1-5) & Web Page', () => {
   let server;
   let baseUrl;
+  let storage;
 
   before(async () => {
-    const storage = new SqliteStorage(':memory:');
+    storage = process.env.DATABASE_URL
+      ? createStorage({ databaseUrl: process.env.DATABASE_URL })
+      : new SqliteStorage(':memory:');
     const app = createApp({ storage, apiKey: TEST_API_KEY });
     server = http.createServer(app);
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -20,8 +23,14 @@ describe('Clinic Booking API (Levels 1-5) & Web Page', () => {
   });
 
   after(async () => {
+    if (process.env.DATABASE_URL && storage) {
+      await storage.resetSlots(DEFAULT_SLOTS);
+    }
     if (server) {
       await new Promise((resolve) => server.close(resolve));
+    }
+    if (storage && typeof storage.close === 'function') {
+      await storage.close();
     }
   });
 
@@ -368,3 +377,4 @@ describe('Clinic Booking API (Levels 1-5) & Web Page', () => {
     assert.equal(otherRes.status, 409); // Reached slot check instead of 429
   });
 });
+

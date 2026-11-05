@@ -480,6 +480,14 @@ class SqliteStorage {
       next_cursor: nextCursor
     };
   }
+
+  async close() {
+    if (this.pool) {
+      await this.pool.end();
+    } else if (this.db) {
+      this.db.close();
+    }
+  }
 }
 
 /**
@@ -574,24 +582,32 @@ class PostgresStorage {
   async _replaceSlotsWithClient(client, slots) {
     await client.query('BEGIN');
     try {
-      await client.query('DELETE FROM bookings');
-      await client.query('DELETE FROM slots');
-      await client.query('DELETE FROM idempotency_keys');
-      await client.query('DELETE FROM rate_limits');
+      await client.query(
+        'DELETE FROM bookings; DELETE FROM slots; DELETE FROM idempotency_keys; DELETE FROM rate_limits;'
+      );
 
-      for (let i = 0; i < slots.length; i++) {
-        const slot = slots[i];
-        const startMs = Date.parse(slot.start);
-        await client.query(
-          `INSERT INTO slots (id, provider, start_iso, end_iso, start_ms, seq) VALUES ($1, $2, $3, $4, $5, $6)`,
-          [
+      if (slots.length > 0) {
+        const values = [];
+        const placeholders = [];
+        for (let i = 0; i < slots.length; i++) {
+          const slot = slots[i];
+          const startMs = Date.parse(slot.start);
+          const offset = i * 6;
+          placeholders.push(
+            `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6})`
+          );
+          values.push(
             String(slot.id),
             String(slot.provider),
             String(slot.start),
             String(slot.end),
             Number.isNaN(startMs) ? 0 : startMs,
             i
-          ]
+          );
+        }
+        await client.query(
+          `INSERT INTO slots (id, provider, start_iso, end_iso, start_ms, seq) VALUES ${placeholders.join(', ')}`,
+          values
         );
       }
       await client.query('COMMIT');
@@ -644,33 +660,36 @@ class PostgresStorage {
 
   async _checkAndRecordRateLimit(client, email, nowMs) {
     const windowStartMs = nowMs - 60_000;
-    await client.query('BEGIN');
-    try {
-      // Advisory lock per email so concurrent requests for the same email serialize rate limit checks
-      await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`rl:${email}`]);
+    const { rows } = await client.query(
+      `WITH lock AS (
+         SELECT pg_advisory_xact_lock(hashtext($1))
+       ),
+       recent AS (
+         SELECT attempted_at_ms
+         FROM rate_limits, lock
+         WHERE email = $2 AND attempted_at_ms > $3
+         ORDER BY attempted_at_ms ASC
+       ),
+       ins AS (
+         INSERT INTO rate_limits (email, attempted_at_ms)
+         SELECT $2, $4
+         WHERE (SELECT COUNT(*) FROM recent) < 5
+         RETURNING id
+       )
+       SELECT
+         (SELECT COUNT(*)::int FROM recent) AS recent_count,
+         (SELECT attempted_at_ms FROM recent LIMIT 1) AS oldest_ms`,
+      [`rl:${email}`, email, windowStartMs, nowMs]
+    );
 
-      const { rows } = await client.query(
-        `SELECT attempted_at_ms FROM rate_limits WHERE email = $1 AND attempted_at_ms > $2 ORDER BY attempted_at_ms ASC`,
-        [email, windowStartMs]
-      );
-
-      if (rows.length >= 5) {
-        await client.query('COMMIT');
-        const oldestMs = Number(rows[0].attempted_at_ms);
-        const retryAfter = Math.max(1, Math.ceil((oldestMs + 60_000 - nowMs) / 1000));
-        return { limited: true, retryAfter };
-      }
-
-      await client.query(
-        `INSERT INTO rate_limits (email, attempted_at_ms) VALUES ($1, $2)`,
-        [email, nowMs]
-      );
-      await client.query('COMMIT');
-      return { limited: false, retryAfter: 0 };
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
+    const recentCount = Number(rows[0]?.recent_count || 0);
+    if (recentCount >= 5) {
+      const oldestMs = Number(rows[0].oldest_ms);
+      const retryAfter = Math.max(1, Math.ceil((oldestMs + 60_000 - nowMs) / 1000));
+      return { limited: true, retryAfter };
     }
+
+    return { limited: false, retryAfter: 0 };
   }
 
   async createBooking({ body, idemKey }) {
@@ -747,44 +766,49 @@ class PostgresStorage {
         return await saveIdemAndRespond(400, { error: 'Invalid email address' });
       }
 
-      // 4. Atomic transaction for slot check + booking creation
-      await client.query('BEGIN');
+      // 4. Single-round-trip atomic CTE for slot lock, validation, and booking creation
+      const bookingId = 'bk_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16);
+      const createdAt = new Date(nowMs).toISOString();
+
       try {
-        // Lock slot row with FOR UPDATE so concurrent bookings for this slot serialize cleanly
-        const { rows: slotRows } = await client.query(
-          `SELECT id, provider, start_iso, end_iso, start_ms FROM slots WHERE id = $1 FOR UPDATE`,
-          [slotId]
+        const { rows: bookRows } = await client.query(
+          `WITH slot_row AS (
+             SELECT id, start_ms
+             FROM slots
+             WHERE id = $1
+             FOR UPDATE
+           ),
+           existing_booking AS (
+             SELECT bookings.id
+             FROM bookings
+             WHERE bookings.slot_id = $1 AND bookings.status = 'confirmed'
+           ),
+           inserted_booking AS (
+             INSERT INTO bookings (id, slot_id, name, email, status, created_at)
+             SELECT $2, $1, $3, $4, 'confirmed', $5
+             FROM slot_row
+             WHERE slot_row.start_ms > $6
+               AND NOT EXISTS (SELECT 1 FROM existing_booking)
+             RETURNING id
+           )
+           SELECT
+             (SELECT COUNT(*)::int FROM slot_row) AS slot_exists,
+             (SELECT start_ms FROM slot_row) AS slot_start_ms,
+             (SELECT COUNT(*)::int FROM existing_booking) AS already_booked,
+             (SELECT id FROM inserted_booking) AS booked_id`,
+          [slotId, bookingId, name, email, createdAt, nowMs]
         );
 
-        if (slotRows.length === 0) {
-          await client.query('COMMIT');
+        const resRow = bookRows[0];
+        if (!resRow || Number(resRow.slot_exists) === 0) {
           return await saveIdemAndRespond(404, { error: 'Slot not found' });
         }
-
-        const slot = slotRows[0];
-        if (Number(slot.start_ms) <= nowMs) {
-          await client.query('COMMIT');
+        if (Number(resRow.slot_start_ms) <= nowMs) {
           return await saveIdemAndRespond(400, { error: 'Slot has already started' });
         }
-
-        const { rows: existingRows } = await client.query(
-          `SELECT id FROM bookings WHERE slot_id = $1 AND status = 'confirmed'`,
-          [slotId]
-        );
-
-        if (existingRows.length > 0) {
-          await client.query('COMMIT');
+        if (Number(resRow.already_booked) > 0 || !resRow.booked_id) {
           return await saveIdemAndRespond(409, { error: 'Slot already booked' });
         }
-
-        const bookingId = 'bk_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16);
-        const createdAt = new Date(nowMs).toISOString();
-
-        await client.query(
-          `INSERT INTO bookings (id, slot_id, name, email, status, created_at)
-           VALUES ($1, $2, $3, $4, 'confirmed', $5)`,
-          [bookingId, slotId, name, email, createdAt]
-        );
 
         const booking = {
           id: bookingId,
@@ -795,18 +819,8 @@ class PostgresStorage {
           created_at: createdAt
         };
 
-        if (idemKey) {
-          await client.query(
-            `INSERT INTO idempotency_keys (idem_key, body_hash, status_code, response_json, created_at_ms)
-             VALUES ($1, $2, $3, $4, $5)`,
-            [idemKey, bodyHash, 201, JSON.stringify(booking), nowMs]
-          );
-        }
-
-        await client.query('COMMIT');
-        return { status: 201, body: booking };
+        return await saveIdemAndRespond(201, booking);
       } catch (err) {
-        await client.query('ROLLBACK');
         if (err.code === '23505') {
           return await saveIdemAndRespond(409, { error: 'Slot already booked' });
         }
@@ -842,45 +856,50 @@ class PostgresStorage {
 
   async cancelBooking(id) {
     await this.ensureInit();
-    const client = await this.pool.connect();
-    try {
-      await client.query('BEGIN');
-      const { rows } = await client.query(
-        `SELECT id, slot_id, name, email, status, created_at FROM bookings WHERE id = $1 FOR UPDATE`,
-        [id]
-      );
+    const { rows } = await this.pool.query(
+      `WITH target AS (
+         SELECT id, slot_id, name, email, status, created_at
+         FROM bookings
+         WHERE id = $1
+         FOR UPDATE
+       ),
+       updated AS (
+         UPDATE bookings
+         SET status = 'cancelled'
+         WHERE id = $1 AND EXISTS (SELECT 1 FROM target WHERE status = 'confirmed')
+         RETURNING id
+       )
+       SELECT
+         t.status AS prev_status,
+         t.id,
+         t.slot_id,
+         t.name,
+         t.email,
+         t.created_at
+       FROM target t`,
+      [id]
+    );
 
-      if (rows.length === 0) {
-        await client.query('ROLLBACK');
-        return { status: 404, body: { error: 'No booking with that id' } };
-      }
-
-      const row = rows[0];
-      if (row.status === 'cancelled') {
-        await client.query('ROLLBACK');
-        return { status: 409, body: { error: 'Already cancelled' } };
-      }
-
-      await client.query(`UPDATE bookings SET status = 'cancelled' WHERE id = $1`, [id]);
-      await client.query('COMMIT');
-
-      return {
-        status: 200,
-        body: {
-          id: row.id,
-          slot_id: row.slot_id,
-          name: row.name,
-          email: row.email,
-          status: 'cancelled',
-          created_at: row.created_at
-        }
-      };
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
+    if (rows.length === 0) {
+      return { status: 404, body: { error: 'No booking with that id' } };
     }
+
+    const row = rows[0];
+    if (row.prev_status === 'cancelled') {
+      return { status: 409, body: { error: 'Already cancelled' } };
+    }
+
+    return {
+      status: 200,
+      body: {
+        id: row.id,
+        slot_id: row.slot_id,
+        name: row.name,
+        email: row.email,
+        status: 'cancelled',
+        created_at: row.created_at
+      }
+    };
   }
 
   async listBookingsByEmail({ email, limit, cursorSeq }) {
@@ -910,6 +929,14 @@ class PostgresStorage {
       })),
       next_cursor: nextCursor
     };
+  }
+
+  async close() {
+    if (this.pool) {
+      await this.pool.end();
+    } else if (this.db) {
+      this.db.close();
+    }
   }
 }
 
