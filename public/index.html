@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Koya Clinic — Appointment Booking</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-inner">
+      <div class="brand">
+        <span class="brand-badge" aria-hidden="true">+</span>
+        <div>
+          <h1>Koya Clinic Appointment Portal</h1>
+          <p class="subtitle">Browse available slots, book an appointment, and view your confirmation</p>
+        </div>
+      </div>
+      <div class="api-status-bar">
+        <span class="status-pill" id="connection-pill">API Ready</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="container main-grid">
+    <!-- Left Column: Available Slots -->
+    <section class="card slots-section" aria-labelledby="slots-heading">
+      <div class="section-header">
+        <div>
+          <h2 id="slots-heading">1. Available Appointment Slots</h2>
+          <p class="section-desc">Ordered earliest start time first. Choose an available slot to book.</p>
+        </div>
+        <button type="button" id="refresh-slots-btn" class="btn btn-secondary">Refresh Slots</button>
+      </div>
+
+      <search class="filter-bar">
+        <form id="filter-form" action="/slots" method="GET" class="filter-form">
+          <div class="field-inline">
+            <label for="provider-filter">Filter by Provider</label>
+            <select id="provider-filter" name="provider">
+              <option value="">All Providers</option>
+            </select>
+          </div>
+          <button type="submit" class="btn btn-secondary">Apply Filter</button>
+        </form>
+      </search>
+
+      <div id="slots-feedback" class="live-feedback" aria-live="polite"></div>
+
+      <div id="slots-list" class="slots-grid" role="list">
+        <!-- Populated dynamically via GET /slots -->
+      </div>
+    </section>
+
+    <!-- Right Column: Book a Slot & Confirmation -->
+    <div class="side-column">
+      <!-- Confirmation Banner (shown immediately after booking or lookup) -->
+      <section id="confirmation-card" class="card confirmation-card" aria-labelledby="confirmation-heading" hidden>
+        <div class="confirmation-header">
+          <span class="confirm-icon" aria-hidden="true">✓</span>
+          <div>
+            <h2 id="confirmation-heading">Booking Confirmation</h2>
+            <p class="section-desc" id="confirmation-subtitle">Your appointment details are saved.</p>
+          </div>
+        </div>
+        <dl class="booking-details" id="confirmation-details">
+          <!-- Populated dynamically -->
+        </dl>
+        <div class="confirmation-actions">
+          <button type="button" id="cancel-confirmed-btn" class="btn btn-danger">Cancel Booking</button>
+          <button type="button" id="view-modal-btn" class="btn btn-secondary">Open Receipt Modal</button>
+        </div>
+      </section>
+
+      <!-- Booking Form -->
+      <section class="card booking-section" aria-labelledby="book-heading">
+        <h2 id="book-heading">2. Book an Appointment</h2>
+        <p class="section-desc">Select a slot on the left or enter a Slot ID below.</p>
+
+        <form id="booking-form" action="/bookings" method="POST" novalidate>
+          <fieldset>
+            <legend class="visually-hidden">Patient Appointment Details</legend>
+
+            <div class="field">
+              <label for="slot-id-input">Selected Slot ID <span class="req-marker">(Required)</span></label>
+              <span id="slot-id-hint" class="hint">Click "Select Slot" on any available slot or type its ID (e.g. s1).</span>
+              <input
+                type="text"
+                id="slot-id-input"
+                name="slot_id"
+                required
+                autocorrect="off"
+                autocapitalize="off"
+                spellcheck="false"
+                aria-describedby="slot-id-hint"
+                aria-errormessage="slot-id-error"
+              >
+              <div id="slot-id-error" class="error-msg">
+                <span aria-hidden="true">⚠</span> Please select or enter a valid slot ID.
+              </div>
+            </div>
+
+            <div class="field">
+              <label for="patient-name-input">Patient Full Name <span class="req-marker">(Required)</span></label>
+              <span id="name-hint" class="hint">Enter your full legal name (spaces are automatically trimmed).</span>
+              <input
+                type="text"
+                id="patient-name-input"
+                name="name"
+                required
+                autocomplete="name"
+                maxlength="120"
+                aria-describedby="name-hint"
+                aria-errormessage="name-error"
+              >
+              <div id="name-error" class="error-msg">
+                <span aria-hidden="true">⚠</span> Please enter the patient's full name.
+              </div>
+            </div>
+
+            <div class="field">
+              <label for="patient-email-input">Patient Email Address <span class="req-marker">(Required)</span></label>
+              <span id="email-hint" class="hint">Format:ada@example.com (stored in lowercase).</span>
+              <input
+                type="email"
+                id="patient-email-input"
+                name="email"
+                required
+                inputmode="email"
+                autocomplete="email"
+                autocorrect="off"
+                autocapitalize="off"
+                spellcheck="false"
+                aria-describedby="email-hint"
+                aria-errormessage="email-error"
+              >
+              <div id="email-error" class="error-msg">
+                <span aria-hidden="true">⚠</span> Please enter a valid email address.
+              </div>
+            </div>
+
+            <details class="advanced-details">
+              <summary>Idempotency &amp; API Key Settings (Levels 2 &amp; 4)</summary>
+              <div class="advanced-inner">
+                <div class="field">
+                  <label for="idempotency-key-input">Idempotency-Key Header (Optional)</label>
+                  <span id="idem-hint" class="hint">Prevents duplicate bookings if a request is retried.</span>
+                  <div class="input-with-btn">
+                    <input
+                      type="text"
+                      id="idempotency-key-input"
+                      name="idempotency_key"
+                      autocorrect="off"
+                      autocapitalize="off"
+                      spellcheck="false"
+                      aria-describedby="idem-hint"
+                    >
+                    <button type="button" id="new-idem-key-btn" class="btn btn-secondary">New Key</button>
+                  </div>
+                </div>
+
+                <div class="field">
+                  <label for="api-key-input">X-API-Key Header (Level 2)</label>
+                  <span id="apikey-hint" class="hint">Required on all API calls. Missing or wrong key returns 401.</span>
+                  <input
+                    type="text"
+                    id="api-key-input"
+                    name="api_key"
+                    value="__DEFAULT_API_KEY__"
+                    autocorrect="off"
+                    autocapitalize="off"
+                    spellcheck="false"
+                    aria-describedby="apikey-hint"
+                  >
+                </div>
+              </div>
+            </details>
+
+            <div id="booking-form-alert" class="alert-box" role="alert" aria-live="assertive" hidden></div>
+
+            <button type="submit" id="book-submit-btn" class="btn btn-primary btn-block">
+              Confirm Appointment Booking
+            </button>
+          </fieldset>
+        </form>
+      </section>
+
+      <!-- Lookup & Patient History -->
+      <section class="card lookup-section" aria-labelledby="lookup-heading">
+        <h2 id="lookup-heading">3. Look Up &amp; Manage Bookings</h2>
+
+        <!-- Single Booking Lookup by ID (Level 1) -->
+        <form id="lookup-id-form" action="/bookings" method="GET" class="sub-form">
+          <fieldset>
+            <legend>Find Booking by ID (Level 1)</legend>
+            <div class="field">
+              <label for="lookup-id-input">Booking ID</label>
+              <div class="input-with-btn">
+                <input
+                  type="text"
+                  id="lookup-id-input"
+                  name="id"
+                  required
+                  autocorrect="off"
+                  autocapitalize="off"
+                  spellcheck="false"
+                >
+                <button type="submit" class="btn btn-secondary">Look Up</button>
+              </div>
+            </div>
+          </fieldset>
+        </form>
+
+        <hr class="divider">
+
+        <!-- Paginated Bookings by Email (Level 4) -->
+        <form id="lookup-email-form" action="/bookings" method="GET" class="sub-form">
+          <fieldset>
+            <legend>Patient Bookings with Cursor Pagination (Level 4)</legend>
+            <div class="field">
+              <label for="lookup-email-input">Patient Email</label>
+              <input
+                type="email"
+                id="lookup-email-input"
+                name="email"
+                required
+                inputmode="email"
+                autocomplete="email"
+                autocorrect="off"
+                autocapitalize="off"
+                spellcheck="false"
+              >
+            </div>
+            <div class="pagination-controls-row">
+              <div class="field-inline">
+                <label for="lookup-limit-input">Page Size (1–50)</label>
+                <select id="lookup-limit-input" name="limit">
+                  <option value="2">2 per page</option>
+                  <option value="5">5 per page</option>
+                  <option value="10" selected>10 per page</option>
+                </select>
+              </div>
+              <button type="submit" class="btn btn-secondary">Search Bookings</button>
+            </div>
+          </fieldset>
+        </form>
+
+        <div id="patient-bookings-container" class="patient-bookings-container" hidden>
+          <ul id="patient-bookings-list" class="bookings-list"></ul>
+          <div class="cursor-bar">
+            <span id="cursor-status" class="cursor-meta"></span>
+            <div class="cursor-btns">
+              <button type="button" id="first-page-btn" class="btn btn-secondary btn-sm">First Page</button>
+              <button type="button" id="next-page-btn" class="btn btn-primary btn-sm" disabled>Next Page →</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Admin Reset Utility (POST /reset) -->
+      <details class="card admin-card">
+        <summary>Admin Tools — Reset &amp; Seed Clinic Slots (POST /reset)</summary>
+        <div class="admin-inner">
+          <p class="section-desc">Deletes all bookings and replaces all slots with the default demo schedule.</p>
+          <button type="button" id="reset-demo-btn" class="btn btn-secondary">Reset to Demo Slots</button>
+        </div>
+      </details>
+    </div>
+  </main>
+
+  <!-- Native Modal Dialog for Booking Confirmation Receipt -->
+  <dialog id="confirmation-dialog" closedby="any" aria-labelledby="dialog-title">
+    <div class="dialog-content">
+      <div class="dialog-header">
+        <span class="confirm-icon" aria-hidden="true">✓</span>
+        <h2 id="dialog-title">Appointment Confirmed</h2>
+      </div>
+      <p class="dialog-lead">Your clinic appointment has been scheduled. Keep your Booking ID for lookup or cancellation.</p>
+      <dl id="dialog-details" class="booking-details"></dl>
+      <form method="dialog" class="dialog-actions">
+        <button type="button" id="dialog-cancel-booking-btn" class="btn btn-danger">Cancel Appointment</button>
+        <button type="submit" value="close" class="btn btn-primary">Done</button>
+      </form>
+    </div>
+  </dialog>
+
+  <footer class="site-footer container">
+    <p>Koya Clinic Booking API &amp; Web Portal · Implements OpenAPI Levels 1–5</p>
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>

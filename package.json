@@ -1,0 +1,17 @@
+{
+  "name": "clinic-booking-api",
+  "version": "1.0.0",
+  "description": "Koya Cohort 4 Assessment - Task 1: Clinic Booking API & Web App (Levels 1-5)",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test tests/api.test.js"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "dependencies": {
+    "pg": "^8.13.3"
+  }
+}

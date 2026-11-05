@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: koya-clinic-booking-api
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 22.16.0
+      - key: API_KEY
+        value: koya-clinic-key-2026
